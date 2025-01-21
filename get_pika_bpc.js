@@ -3,7 +3,7 @@ const path = require('path');
 const csv = require('csv-parser');
 
 // Path to your CSV file
-const csvFilePath = path.join(__dirname, './202401_BPC.csv');
+const csvFilePath = path.join(__dirname, './202412_BPC.csv');
 const exportFilePath = path.join(__dirname, './BPC.csv');
 
 // Extract period from the CSV file name
