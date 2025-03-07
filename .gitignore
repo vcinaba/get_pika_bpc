@@ -110,3 +110,5 @@ public
 # Coverage
 *.lcov
 coverage
+
+*.csv

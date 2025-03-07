@@ -2,12 +2,23 @@ const fs = require('fs');
 const path = require('path');
 const csv = require('csv-parser');
 
-// Path to your CSV file
-const csvFilePath = path.join(__dirname, './202412_BPC.csv');
+// Get the yyyymm parameter from command line arguments
+const args = process.argv.slice(2);
+if (args.length !== 1) {
+  console.error('Usage: node get_pika_bpc.js yyyymm (e.g., node get_pika_bpc.js 202412)');
+  process.exit(1);
+}
+
+const yyyymm = args[0];
+if (!/^\d{6}$/.test(yyyymm)) {
+  console.error('Error: yyyymm must be a 6-digit number (e.g., 202412)');
+  process.exit(1);
+}
+
+// Paths to input and output CSV files
+const csvFilePath = path.join(__dirname, `./${yyyymm}_BPC.csv`);
 const exportFilePath = path.join(__dirname, './BPC.csv');
 
-// Extract period from the CSV file name
-const period = path.basename(csvFilePath, path.extname(csvFilePath)).slice(0, 6);1
 // Initialize an object to store the sum and count for each UF
 const ufData = {
   AC: { sum: 0, count: 0 }, AL: { sum: 0, count: 0 }, AP: { sum: 0, count: 0 },
@@ -22,12 +33,22 @@ const ufData = {
   Others: { sum: 0, count: 0 }, Total: { sum: 0, count: 0 }
 };
 
+console.time('pika-csv');
+
+let lineCount = 0;
+
+// Check if BPC.csv exists; if not, write the header
+if (!fs.existsSync(exportFilePath)) {
+  fs.writeFileSync(exportFilePath, 'Period,UF,Sum,Count\n');
+}
+
 fs.createReadStream(csvFilePath)
   .pipe(csv({
     separator: ';',
     mapHeaders: ({ header, index }) => header.trim()
   }))
   .on('data', (row) => {
+    lineCount++;
     const rowValues = Object.values(row);
     const value = parseFloat(rowValues[13].replace(',', '.')); // VALOR PARCELA is at index 13
     const uf = rowValues[2]; // UF is at index 2
@@ -44,22 +65,40 @@ fs.createReadStream(csvFilePath)
         ufData.Others.count++;
       }
     }
+
+    if (lineCount % 1000000 === 0) {
+      console.log(`Processed ${lineCount} rows`);
+      console.log('Partial Sums by State:');
+      for (const [state, data] of Object.entries(ufData)) {
+        if (data.count > 0) {
+          console.log(`${state}: Sum = ${data.sum.toFixed(2)}, Count = ${data.count}`);
+        }
+      }
+      console.log('---');
+    }
   })
   .on('end', () => {
+    console.log(`Finished processing ${lineCount} lines from ${csvFilePath}`);
+    console.log('\nFinal Sums by State:');
+    for (const [state, data] of Object.entries(ufData)) {
+      if (data.count > 0) {
+        console.log(`${state}: Sum = ${data.sum.toFixed(2)}, Count = ${data.count}`);
+      }
+    }
+
     // Prepare data for export
     const exportData = [];
     for (const [uf, data] of Object.entries(ufData)) {
-      exportData.push(`${period},${uf},${data.sum.toFixed(2)},${data.count}`);
+      if (data.count > 0) { // Only include states with data
+        exportData.push(`${yyyymm},${uf},${data.sum.toFixed(2)},${data.count}`);
+      }
     }
 
     // Append data to the export CSV file
-    fs.appendFile(exportFilePath, exportData.join('\n') + '\n', (err) => {
-      if (err) {
-        console.error(`Error writing to the export file: ${err.message}`);
-      } else {
-        console.log('Data successfully appended to the export file.');
-      }
-    });
+    fs.appendFileSync(exportFilePath, exportData.join('\n') + '\n');
+    console.log('Data successfully appended to the export file.');
+    
+    console.timeEnd('pika-csv');
   })
   .on('error', (error) => {
     console.error(`Error reading the CSV file: ${error.message}`);
